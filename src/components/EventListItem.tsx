@@ -3,7 +3,7 @@ import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { EventOccurrence, EVENT_CATEGORIES } from '@/types';
 import { useAppTheme } from '@/theme/ThemeContext';
 import { categoryTint, priorityColors } from '@/theme/colors';
-import { formatTime12h, countdownLabel } from '@/lib/dateUtils';
+import { formatTime12h, countdownLabel, isPastMoment } from '@/lib/dateUtils';
 
 function categoryMeta(category: string) {
   return EVENT_CATEGORIES.find((c) => c.key === category) ?? EVENT_CATEGORIES[EVENT_CATEGORIES.length - 1];
@@ -24,6 +24,7 @@ export function EventListItem({
   const { event, occurrenceDate, isCompleted } = occurrence;
   const meta = categoryMeta(event.category);
   const tint = categoryTint[event.category] ?? colors.primary;
+  const isOverdueTask = event.category === 'task' && !isCompleted && isPastMoment(occurrenceDate, event.time);
 
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.row, { opacity: pressed ? 0.7 : 1 }]}>
@@ -37,14 +38,14 @@ export function EventListItem({
             numberOfLines={1}
             style={[
               styles.title,
-              { color: colors.text, textDecorationLine: isCompleted ? 'line-through' : 'none' },
+              { color: isOverdueTask ? colors.danger : colors.text, textDecorationLine: isCompleted ? 'line-through' : 'none' },
             ]}
           >
             {event.title}
           </Text>
           {event.priority === 'very_important' && <Text style={{ marginLeft: 6 }}>⭐</Text>}
         </View>
-        <Text style={[styles.subtitle, { color: colors.textMuted }]}>
+        <Text style={[styles.subtitle, { color: isOverdueTask ? colors.danger : colors.textMuted }]}> 
           {event.isAllDay ? 'All day' : formatTime12h(event.time)}
           {showCountdown ? `  ·  ${countdownLabel(occurrenceDate, event.time)}` : ''}
         </Text>

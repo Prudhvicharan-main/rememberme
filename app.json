@@ -6,12 +6,10 @@
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "scheme": "rememberme",
-
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.rememberme.app"
     },
-
     "android": {
       "package": "com.rememberme.app",
       "adaptiveIcon": {
@@ -23,7 +21,6 @@
         "POST_NOTIFICATIONS"
       ]
     },
-
     "plugins": [
       [
         "expo-notifications",
@@ -35,6 +32,11 @@
       "@react-native-community/datetimepicker",
       "expo-status-bar",
       "expo-font"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "fe955aff-06c5-4b82-8035-69be8b73b9ce"
+      }
+    }
   }
 }

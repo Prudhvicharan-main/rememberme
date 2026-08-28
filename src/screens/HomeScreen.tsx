@@ -29,6 +29,10 @@ export default function HomeScreen() {
 
   const { timed, allDay } = useMemo(() => todaysOccurrences(events), [events]);
   const upcoming = useMemo(() => upcomingOccurrences(events, 14), [events]);
+  const dashboardOccurrences = useMemo(
+    () => [...timed, ...allDay, ...upcoming].filter((occ) => !occ.isCompleted),
+    [allDay, timed, upcoming]
+  );
   const [selectedDate, setSelectedDate] = React.useState(new Date().toISOString().slice(0, 10));
   const monthOccurrences = useMemo(() => {
     const date = parseISO(selectedDate);
@@ -40,11 +44,11 @@ export default function HomeScreen() {
   }, [events, selectedDate]);
 
   const nearTermHighlights = upcoming.slice(0, 4);
-  const meetingCount = upcoming.filter((o) => o.event.category === 'meeting').length;
-  const taskCount = upcoming.filter((o) => o.event.category === 'task').length;
-  const birthdayCount = upcoming.filter((o) => o.event.category === 'birthday').length;
-  const anniversaryCount = upcoming.filter((o) => o.event.category === 'anniversary').length;
-  const meetings = upcoming.filter((o) => o.event.category === 'meeting').slice(0, 3);
+  const meetingCount = dashboardOccurrences.filter((o) => o.event.category === 'meeting').length;
+  const taskCount = dashboardOccurrences.filter((o) => o.event.category === 'task').length;
+  const birthdayCount = dashboardOccurrences.filter((o) => o.event.category === 'birthday').length;
+  const anniversaryCount = dashboardOccurrences.filter((o) => o.event.category === 'anniversary').length;
+  const meetings = dashboardOccurrences.filter((o) => o.event.category === 'meeting').slice(0, 3);
   const markedDates = useMemo(() => {
     const marks: Record<string, any> = {};
     monthOccurrences.forEach((occ) => {

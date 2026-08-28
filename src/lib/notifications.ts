@@ -107,6 +107,14 @@ function buildNotificationContent(
   const whenLabel = event.isAllDay
     ? formatDateShort(occurrenceDate)
     : `${formatDateShort(occurrenceDate)} · ${formatTime12h(event.time)}`;
+  if (event.category === 'task') {
+    return {
+      title: '📝 You have a task',
+      body: `${event.title} · ${whenLabel}`,
+      data: { eventId: event.id, occurrenceDate },
+      sound: true,
+    };
+  }
   return {
     title: `${emoji} ${event.title}`,
     body: whenLabel,
