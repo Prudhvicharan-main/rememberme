@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "RememberMe",
+    "slug": "rememberme",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "scheme": "rememberme",
+
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.rememberme.app"
+    },
+
+    "android": {
+      "package": "com.rememberme.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#0F172A"
+      },
+      "permissions": [
+        "RECEIVE_BOOT_COMPLETED",
+        "SCHEDULE_EXACT_ALARM",
+        "POST_NOTIFICATIONS"
+      ]
+    },
+
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "color": "#8B5CF6",
+          "defaultChannel": "default"
+        }
+      ],
+      "@react-native-community/datetimepicker",
+      "expo-status-bar",
+      "expo-font"
+    ]
+  }
+}
