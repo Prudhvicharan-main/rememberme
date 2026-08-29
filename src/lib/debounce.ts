@@ -7,7 +7,7 @@ export function debounce<T extends (...args: any[]) => any>(
   fn: T,
   delayMs: number
 ): (...args: Parameters<T>) => void {
-  let timeoutId: NodeJS.Timeout | null = null;
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
   return function debounced(...args: Parameters<T>) {
     if (timeoutId) clearTimeout(timeoutId);
@@ -41,7 +41,7 @@ export function createDebouncedWithFlush<T extends (...args: any[]) => Promise<v
   fn: T,
   delayMs: number
 ): { debounced: (...args: Parameters<T>) => void; flush: () => Promise<void> } {
-  let timeoutId: NodeJS.Timeout | null = null;
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
   let lastArgs: Parameters<T> | null = null;
 
   return {

@@ -128,7 +128,7 @@ export default function SettingsScreen() {
 
       <SectionHeader title="App Updates" />
       {updateAvailable && latestVersion && (
-        <Card style={{ borderLeftWidth: 4, borderLeftColor: colors.warning || '#F59E0B' }}>
+        <Card style={{ borderLeftWidth: 4, borderLeftColor: colors.accent || '#F59E0B' }}>
           <Text style={{ color: colors.text, fontSize: 14, fontWeight: '600', marginBottom: 8 }}>
             🎉 Update Available!
           </Text>
