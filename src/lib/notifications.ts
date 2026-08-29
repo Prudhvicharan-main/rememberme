@@ -10,8 +10,9 @@ import {
 import { getOccurrencesInRange } from './recurrence';
 import { reminderTriggerDate, formatTime12h, formatDateShort } from './dateUtils';
 import { readJson, writeJson, StorageKeys } from './storage';
-import { EVENT_CATEGORIES } from '@/types';
+import { EVENT_CATEGORIES, Settings } from '@/types';
 import { logger } from './logger';
+import { useSettingsStore } from '@/store/settingsStore';
 
 // Constants for battery optimization
 const ANDROID_CHANNEL_ID = 'default';
@@ -168,6 +169,88 @@ function shouldPlaySound(category: RememberEvent['category']): boolean {
   return category === 'meeting' || category === 'appointment';
 }
 
+function buildReminderPlan(event: RememberEvent): Array<{ id: string; minutesBefore: number }> {
+  const plan = new Map<string, { id: string; minutesBefore: number }>();
+
+  const addPlanEntry = (id: string, minutesBefore: number) => {
+    const key = `${id}:${minutesBefore}`;
+    if (!plan.has(key)) {
+      plan.set(key, { id, minutesBefore });
+    }
+  };
+
+  for (const reminder of event.reminders) {
+    const minutesBefore =
+      reminder.offset === 'custom'
+        ? reminder.customMinutes ?? 0
+        : REMINDER_OFFSET_MINUTES[reminder.offset];
+    addPlanEntry(reminder.id, minutesBefore);
+  }
+
+  if (event.category === 'birthday' || event.category === 'anniversary') {
+    addPlanEntry(`${event.id}:birthday-week`, 60 * 24 * 7);
+    addPlanEntry(`${event.id}:birthday-day-before`, 60 * 24);
+    addPlanEntry(`${event.id}:birthday-day`, 0);
+  }
+
+  if (
+    (event.priority === 'important' || event.priority === 'very_important') &&
+    event.time &&
+    !event.isAllDay &&
+    event.category !== 'birthday' &&
+    event.category !== 'anniversary'
+  ) {
+    addPlanEntry(`${event.id}:timeline-9h`, 9 * 60);
+    addPlanEntry(`${event.id}:timeline-5h`, 5 * 60);
+    addPlanEntry(`${event.id}:timeline-2h`, 2 * 60);
+    addPlanEntry(`${event.id}:timeline-at-time`, 0);
+  }
+
+  return Array.from(plan.values());
+}
+
+export async function registerReminderNotificationActions(): Promise<void> {
+  try {
+    await Notifications.setNotificationCategoryAsync('REMINDER_ACTIONS', [
+      {
+        identifier: 'DONE_ACTION',
+        buttonTitle: 'Done',
+        options: { isDestructive: false, isAuthenticationRequired: false },
+      },
+      {
+        identifier: 'SNOOZE_10M_ACTION',
+        buttonTitle: 'Snooze 10 min',
+        options: { isDestructive: false, isAuthenticationRequired: false },
+      },
+    ]);
+    logger.debug('Reminder notification actions registered');
+  } catch (e) {
+    logger.error('Failed to register reminder notification actions:', e);
+  }
+}
+
+function parseClockToMinutes(value: string): number {
+  const [h, m] = (value || '00:00').split(':').map(Number);
+  return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);
+}
+
+export function isQuietHoursActive(date: Date): boolean {
+  const settings = useSettingsStore.getState().settings;
+  if (!settings.quietHoursEnabled) return false;
+
+  const startMinutes = parseClockToMinutes(settings.quietHoursStart);
+  const endMinutes = parseClockToMinutes(settings.quietHoursEnd);
+  const nowMinutes = date.getHours() * 60 + date.getMinutes();
+
+  if (startMinutes === endMinutes) return true;
+
+  if (startMinutes < endMinutes) {
+    return nowMinutes >= startMinutes && nowMinutes < endMinutes;
+  }
+
+  return nowMinutes >= startMinutes || nowMinutes < endMinutes;
+}
+
 function buildNotificationContent(
   event: RememberEvent,
   occurrenceDate: string
@@ -178,6 +261,7 @@ function buildNotificationContent(
     : `${formatDateShort(occurrenceDate)} · ${formatTime12h(event.time)}`;
 
   const baseContent: Notifications.NotificationContentInput = {
+    categoryIdentifier: 'REMINDER_ACTIONS',
     data: { eventId: event.id, occurrenceDate },
     sound: shouldPlaySound(event.category), // Conditional sound
   };
@@ -231,22 +315,26 @@ export async function syncEventNotifications(
       const rangeEnd = addDays(now, lookaheadDaysFor(event.recurrence.frequency));
       const occurrences = getOccurrencesInRange(event, now, rangeEnd);
 
-      // Limit reminders per event to prevent notification spam
-      const limitedReminders = event.reminders.slice(0, MAX_REMINDERS_PER_EVENT);
+      const reminderPlan = buildReminderPlan(event).slice(0, MAX_REMINDERS_PER_EVENT);
       let scheduledCount = 0;
 
       for (const occ of occurrences) {
         if (occ.isCompleted || scheduledCount >= MAX_SCHEDULED_PER_EVENT_IN_LOOKAHEAD) continue;
 
         let immediateFallbackScheduled = false;
-        for (const reminder of limitedReminders) {
+        for (const reminder of reminderPlan) {
           if (scheduledCount >= MAX_SCHEDULED_PER_EVENT_IN_LOOKAHEAD) break;
 
-          const minutesBefore =
-            reminder.offset === 'custom'
-              ? reminder.customMinutes ?? 0
-              : REMINDER_OFFSET_MINUTES[reminder.offset];
+          const minutesBefore = reminder.minutesBefore;
           let triggerDate = reminderTriggerDate(occ.occurrenceDate, event.time, minutesBefore);
+
+          if (isQuietHoursActive(triggerDate)) {
+            const nextHour = new Date(triggerDate.getTime() + 60 * 60 * 1000);
+            if (isQuietHoursActive(nextHour)) {
+              continue;
+            }
+            triggerDate = nextHour;
+          }
 
           if (triggerDate.getTime() <= Date.now()) {
             const createdRecently = Date.now() - new Date(event.createdAt).getTime() < 2 * 60 * 1000;

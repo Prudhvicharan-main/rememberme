@@ -162,6 +162,9 @@ export interface Settings {
   theme: ThemePreference;
   notificationsEnabled: boolean;
   morningBriefingEnabled: boolean;
+  quietHoursEnabled: boolean;
+  quietHoursStart: string;
+  quietHoursEnd: string;
   defaultReminders: Partial<Record<EventCategory, ReminderOffsetKey[]>>;
 }
 
@@ -169,14 +172,19 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
   notificationsEnabled: true,
   morningBriefingEnabled: true,
+  quietHoursEnabled: true,
+  quietHoursStart: '22:00',
+  quietHoursEnd: '07:00',
   defaultReminders: {
-    birthday: ['30d', '7d', '3d', '1d', 'at_time'],
+    birthday: ['7d', '1d', 'at_time'],
     anniversary: ['7d', '1d', 'at_time'],
-    meeting: ['30m'],
-    task: ['1h'],
-    appointment: ['1d', '1h'],
-    exam: ['7d', '1d'],
+    meeting: ['1d', '2h', '30m', 'at_time'],
+    task: ['1d', '2h', '1h'],
+    appointment: ['1d', '2h', '1h'],
+    exam: ['7d', '1d', '2h'],
     payment: ['3d', '1d'],
+    important: ['1d', '2h', '1h', 'at_time'],
+    work: ['1d', '2h', '30m'],
   },
 };
 

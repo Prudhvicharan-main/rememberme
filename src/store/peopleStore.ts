@@ -77,7 +77,7 @@ async function syncLinkedEvent(
     const title = kind === 'birthday' ? `${person.name}'s Birthday` : `${person.name}'s Anniversary`;
     const category = kind === 'birthday' ? 'birthday' : 'anniversary';
     const defaultReminders: ReminderOffsetKey[] =
-      kind === 'birthday' ? ['30d', '7d', '3d', '1d', 'at_time'] : ['7d', '1d', 'at_time'];
+      kind === 'birthday' ? ['7d', '1d', 'at_time'] : ['7d', '1d', 'at_time'];
 
     if (existingId && events.events[existingId]) {
       await events

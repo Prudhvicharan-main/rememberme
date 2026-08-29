@@ -186,6 +186,36 @@ export default function SettingsScreen() {
         />
       </Card>
 
+      <SectionHeader title="Quiet Hours" />
+      <Card>
+        <Row label="Enable quiet hours">
+          <Switch
+            value={settings.quietHoursEnabled}
+            onValueChange={(v) => updateSettings({ quietHoursEnabled: v })}
+          />
+        </Row>
+        <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: colors.textMuted, fontSize: 12, marginBottom: 6 }}>Start</Text>
+            <TextInput
+              value={settings.quietHoursStart}
+              onChangeText={(value) => updateSettings({ quietHoursStart: value })}
+              placeholder="22:00"
+              style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 8, color: colors.text, padding: 10 }}
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: colors.textMuted, fontSize: 12, marginBottom: 6 }}>End</Text>
+            <TextInput
+              value={settings.quietHoursEnd}
+              onChangeText={(value) => updateSettings({ quietHoursEnd: value })}
+              placeholder="07:00"
+              style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 8, color: colors.text, padding: 10 }}
+            />
+          </View>
+        </View>
+      </Card>
+
       <SectionHeader title="Morning Briefing" />
       <Card>
         <Row label="Show morning briefing on Home">

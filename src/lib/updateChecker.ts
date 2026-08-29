@@ -16,11 +16,11 @@ export interface AppVersion {
 
 // Current app version (update this when you release new version)
 export const CURRENT_VERSION = {
-  version: '1.0.2',
-  buildNumber: 102,
-  releaseNotes: '✨ Battery optimization (40% savings), Error boundaries, Auto-update system, Clean code improvements',
+  version: '1.0.3',
+  buildNumber: 103,
+  releaseNotes: '✨ New app icon, smart birthday/anniversary reminders, quiet hours, reminder timeline, done/snooze notification actions',
   forceUpdate: false,
-  downloadUrl: 'https://github.com/Prudhvicharan-main/rememberme/releases/download/v1.0.2/rememberme-1.0.2.apk',
+  downloadUrl: 'https://github.com/Prudhvicharan-main/rememberme/releases/download/v1.0.3/rememberme-1.0.3.apk',
 };
 
 // GitHub Configuration
