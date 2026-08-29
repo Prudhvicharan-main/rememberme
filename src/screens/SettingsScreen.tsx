@@ -1,23 +1,36 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, Switch, Alert, Share } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, Switch, Alert, Share, Linking, Pressable } from 'react-native';
+import * as Updates from 'expo-updates';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/navigation/types';
 import { useSettingsStore } from '@/store/settingsStore';
 import { useEventsStore } from '@/store/eventsStore';
 import { usePeopleStore } from '@/store/peopleStore';
+import { useUpdateStore } from '@/store/updateStore';
 import { useAppTheme } from '@/theme/ThemeContext';
 import { ScreenContainer, Card, SectionHeader, Chip, SecondaryButton } from '@/components/ui';
 import { ThemePreference } from '@/types';
 import { exportAllData, deleteAllData } from '@/lib/storage';
 import { requestPermissions, getPermissionState } from '@/lib/notifications';
+import { logger } from '@/lib/logger';
 
 export default function SettingsScreen() {
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { colors } = useAppTheme();
   const settings = useSettingsStore((s) => s.settings);
   const updateSettings = useSettingsStore((s) => s.update);
+  const updateAvailable = useUpdateStore((s) => s.updateAvailable);
+  const latestVersion = useUpdateStore((s) => s.latestVersion);
+  const checkForUpdates = useUpdateStore((s) => s.checkForUpdates);
+  const dismissUpdate = useUpdateStore((s) => s.dismissUpdate);
   const [permissionNote, setPermissionNote] = useState<string | null>(null);
+  const [checkingForUpdate, setCheckingForUpdate] = useState(false);
+
+  // Check for updates on screen load
+  useEffect(() => {
+    checkForUpdates().catch((e) => logger.warn('Failed to check updates:', e));
+  }, []);
 
   const onToggleNotifications = async (value: boolean) => {
     if (value) {
@@ -39,6 +52,30 @@ export default function SettingsScreen() {
   const onExport = async () => {
     const json = await exportAllData();
     await Share.share({ message: json, title: 'RememberMe data export' });
+  };
+
+  const onCheckForUpdate = async () => {
+    if (checkingForUpdate) return;
+    setCheckingForUpdate(true);
+    try {
+      const result = await Updates.checkForUpdateAsync();
+      if (!result.isAvailable) {
+        Alert.alert('No update available', 'RememberMe is already up to date.');
+        return;
+      }
+      await Updates.fetchUpdateAsync();
+      Alert.alert('Update ready', 'Restart RememberMe now to apply the update.', [
+        { text: 'Later', style: 'cancel' },
+        { text: 'Restart', onPress: () => Updates.reloadAsync() },
+      ]);
+    } catch {
+      Alert.alert(
+        'Update unavailable',
+        'Updates work in an installed APK configured with EAS Updates. Please try again after publishing an update.'
+      );
+    } finally {
+      setCheckingForUpdate(false);
+    }
   };
 
   const onDeleteAll = () => {
@@ -87,6 +124,66 @@ export default function SettingsScreen() {
             />
           ))}
         </View>
+      </Card>
+
+      <SectionHeader title="App Updates" />
+      {updateAvailable && latestVersion && (
+        <Card style={{ borderLeftWidth: 4, borderLeftColor: colors.warning || '#F59E0B' }}>
+          <Text style={{ color: colors.text, fontSize: 14, fontWeight: '600', marginBottom: 8 }}>
+            🎉 Update Available!
+          </Text>
+          <Text style={{ color: colors.textMuted, fontSize: 13, marginBottom: 12 }}>
+            Version {latestVersion.version} is ready to download.
+          </Text>
+          {latestVersion.releaseNotes && (
+            <Text style={{ color: colors.textMuted, fontSize: 12, marginBottom: 12, fontStyle: 'italic' }}>
+              {latestVersion.releaseNotes}
+            </Text>
+          )}
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <Pressable
+              onPress={async () => {
+                try {
+                  if (latestVersion.downloadUrl) {
+                    await Linking.openURL(latestVersion.downloadUrl);
+                  }
+                } catch (e) {
+                  Alert.alert('Error', 'Failed to open download link');
+                }
+              }}
+              style={{
+                flex: 1,
+                backgroundColor: colors.primary,
+                paddingVertical: 10,
+                borderRadius: 6,
+                alignItems: 'center',
+              }}
+            >
+              <Text style={{ color: '#fff', fontWeight: '600' }}>Download</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => dismissUpdate()}
+              style={{
+                flex: 1,
+                backgroundColor: colors.border,
+                paddingVertical: 10,
+                borderRadius: 6,
+                alignItems: 'center',
+              }}
+            >
+              <Text style={{ color: colors.text, fontWeight: '600' }}>Later</Text>
+            </Pressable>
+          </View>
+        </Card>
+      )}
+      <Card>
+        <Text style={{ color: colors.textMuted, fontSize: 13, marginBottom: 12 }}>
+          Download app changes without reinstalling the APK.
+        </Text>
+        <SecondaryButton
+          title={checkingForUpdate ? 'Checking for updates...' : 'Check for Updates'}
+          onPress={onCheckForUpdate}
+        />
       </Card>
 
       <SectionHeader title="Morning Briefing" />

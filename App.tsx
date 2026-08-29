@@ -7,6 +7,7 @@ import { View, ActivityIndicator } from 'react-native';
 import { ThemeProvider, useAppTheme } from '@/theme/ThemeContext';
 import { useAppBootstrap } from '@/lib/bootstrap';
 import RootNavigator from '@/navigation/RootNavigator';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 function AppInner() {
   const ready = useAppBootstrap();
@@ -33,7 +34,9 @@ export default function App() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <ThemeProvider>
-          <AppInner />
+          <ErrorBoundary>
+            <AppInner />
+          </ErrorBoundary>
         </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

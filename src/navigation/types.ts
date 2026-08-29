@@ -25,4 +25,5 @@ export type TabParamList = {
   Meetings: undefined;
   People: undefined;
   Tasks: undefined;
+  Assistant: undefined;
 };
