@@ -165,6 +165,9 @@ export interface Settings {
   quietHoursEnabled: boolean;
   quietHoursStart: string;
   quietHoursEnd: string;
+  smsEnabled: boolean;
+  userPhoneNumber: string;
+  userName: string;
   defaultReminders: Partial<Record<EventCategory, ReminderOffsetKey[]>>;
 }
 
@@ -175,6 +178,9 @@ export const DEFAULT_SETTINGS: Settings = {
   quietHoursEnabled: true,
   quietHoursStart: '22:00',
   quietHoursEnd: '07:00',
+  smsEnabled: false,
+  userPhoneNumber: '',
+  userName: '',
   defaultReminders: {
     birthday: ['7d', '1d', 'at_time'],
     anniversary: ['7d', '1d', 'at_time'],

@@ -7,6 +7,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { addDays, endOfMonth, startOfMonth, parseISO } from 'date-fns';
 import { RootStackParamList } from '@/navigation/types';
 import { useEventsStore } from '@/store/eventsStore';
+import { useSettingsStore } from '@/store/settingsStore';
 import { useAppTheme } from '@/theme/ThemeContext';
 import { ScreenContainer, SectionHeader, Card, EmptyState } from '@/components/ui';
 import { EventListItem } from '@/components/EventListItem';
@@ -15,17 +16,19 @@ import { countdownLabel, formatDateShort } from '@/lib/dateUtils';
 import { suggestionsForCategory } from '@/lib/suggestions';
 import { categoryTint } from '@/theme/colors';
 
-function greetingForNow(): string {
+function greetingForNow(userName: string): string {
   const h = new Date().getHours();
-  if (h < 12) return 'Good morning! 👋';
-  if (h < 17) return 'Good afternoon! 👋';
-  return 'Good evening! 👋';
+  const name = userName ? `, ${userName}` : '';
+  if (h < 12) return `Good morning${name}! 👋`;
+  if (h < 17) return `Good afternoon${name}! 👋`;
+  return `Good evening${name}! 👋`;
 }
 
 export default function HomeScreen() {
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { colors } = useAppTheme();
   const events = useEventsStore((s) => s.events);
+  const userName = useSettingsStore((s) => s.settings.userName);
 
   const { timed, allDay } = useMemo(() => todaysOccurrences(events), [events]);
   const upcoming = useMemo(() => upcomingOccurrences(events, 14), [events]);
