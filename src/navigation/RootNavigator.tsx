@@ -31,9 +31,8 @@ const TAB_ICONS: Record<keyof TabParamList, keyof typeof Ionicons.glyphMap> = {
   Home: 'home',
   Moments: 'sparkles',
   Meetings: 'calendar',
-  People: 'people',
   Tasks: 'checkbox',
-  Assistant: 'chatbubble-ellipses',
+  People: 'people',
 };
 
 function SettingsButton() {
@@ -67,9 +66,8 @@ function Tabs() {
       <Tab.Screen name="Home" component={HomeScreen} options={{ title: 'RememberMe' }} />
       <Tab.Screen name="Moments" component={MomentsScreen} options={{ headerShown: false }} />
       <Tab.Screen name="Meetings" component={MeetingsScreen} options={{ headerShown: false }} />
-      <Tab.Screen name="People" component={PeopleScreen} options={{ headerShown: false }} />
       <Tab.Screen name="Tasks" component={TasksScreen} options={{ headerShown: false }} />
-      <Tab.Screen name="Assistant" component={AssistantScreen} options={{ headerShown: false }} />
+      <Tab.Screen name="People" component={PeopleScreen} options={{ headerShown: false }} />
     </Tab.Navigator>
   );
 }

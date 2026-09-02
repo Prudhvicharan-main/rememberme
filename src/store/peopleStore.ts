@@ -32,8 +32,8 @@ function validatePersonInput(input: PersonInput): boolean {
   const checkMonthDay = (value?: string | null) => {
     if (!value) return true;
     const [mm, dd] = value.split('-').map(Number);
-    if (mm == null || dd == null) return false;
-    return mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31;
+    if (!Number.isInteger(mm) || !Number.isInteger(dd) || mm < 1 || mm > 12) return false;
+    return dd >= 1 && dd <= new Date(2000, mm, 0).getDate();
   };
 
   return checkMonthDay(input.birthday) && checkMonthDay(input.anniversary);
@@ -46,15 +46,18 @@ function nextOccurrenceIsoForMonthDay(monthDay: string): string {
   }
 
   const now = new Date();
-  let year = now.getFullYear();
-  const candidate = new Date(year, mm - 1, dd);
-  if (candidate.getTime() < new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()) {
-    year += 1;
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  for (let year = now.getFullYear(); year <= now.getFullYear() + 8; year += 1) {
+    const candidate = new Date(year, mm - 1, dd);
+    const isValidDate = candidate.getFullYear() === year && candidate.getMonth() === mm - 1 && candidate.getDate() === dd;
+    if (isValidDate && candidate.getTime() >= today.getTime()) {
+      const pad = (n: number) => String(n).padStart(2, '0');
+      return `${year}-${pad(mm)}-${pad(dd)}`;
+    }
   }
 
-  const d = new Date(year, mm - 1, dd);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  throw new Error('Could not calculate next occurrence');
 }
 
 async function syncLinkedEvent(

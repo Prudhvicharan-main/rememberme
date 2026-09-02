@@ -32,6 +32,7 @@ export type AssistantIntent =
   | { type: 'query_birthdays' }
   | { type: 'query_anniversaries' }
   | { type: 'query_meetings' }
+  | { type: 'query_meetings_tomorrow' }
   | { type: 'query_tasks' }
   | { type: 'greeting' }
   | { type: 'query_suggestions'; subject: string }
@@ -48,6 +49,10 @@ export function classifyMessage(raw: string): AssistantIntent {
 
   if (/^(hi|hello|hey|hey there|good morning|good afternoon|good evening)[!. ]*$/.test(text)) {
     return { type: 'greeting' };
+  }
+
+  if (/meeting.*tomorrow|tomorrow.*meeting/.test(text)) {
+    return { type: 'query_meetings_tomorrow' };
   }
 
   if (/(show|list|see|view).*(meeting|meetings)|what.*meetings|my meetings/.test(text)) {

@@ -66,7 +66,7 @@ export default function HomeScreen() {
 
   return (
     <ScreenContainer contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16 }}>
-      <Text style={[styles.greeting, { color: colors.text }]}>{greetingForNow()}</Text>
+      <Text style={[styles.greeting, { color: colors.text }]}>{greetingForNow(userName)}</Text>
       <Text style={[styles.subGreeting, { color: colors.textMuted }]}>Here's what you need to remember today.</Text>
 
       <View style={styles.statsRow}>
