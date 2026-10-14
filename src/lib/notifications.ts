@@ -15,40 +15,48 @@ import {
 } from './dateUtils';
 import { readJson, writeJson, StorageKeys } from './storage';
 import { EVENT_CATEGORIES } from '@/types';
+import { logger } from './logger';
+import { useSettingsStore } from '@/store/settingsStore';
 
-// ----------------------------------------------------------------------------
-// Handler: how a notification behaves when it arrives while the app is open.
-// ----------------------------------------------------------------------------
+// Constants for battery optimization
+const ANDROID_CHANNEL_ID = 'reminders-v2';
+const NOTIFICATION_CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+const MAX_REMINDERS_PER_EVENT = 5; // Limit reminders to prevent notification spam
+const MAX_SCHEDULED_PER_EVENT_IN_LOOKAHEAD = 50; // Prevent excessive scheduling for recurring events
+
+let lastCleanupTime = 0;
+
+// ============================================================================
+// BATTERY OPTIMIZATION: Notification handler
+// Sound and badge disabled by default to save battery; apps can re-enable based on DND
+// ============================================================================
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowBanner: true,
     shouldShowList: true,
-    shouldPlaySound: true,
+    shouldPlaySound: false, // Disabled to save battery - rare calls can override
     shouldSetBadge: false,
   }),
 });
 
-// ----------------------------------------------------------------------------
-// Android notification channel
-// ----------------------------------------------------------------------------
-// IMPORTANT:
-// We use a NEW channel ID so an old silent "default" channel does not
-// continue to control the notification sound.
-const ANDROID_CHANNEL_ID = 'reminders-v2';
-
+/**
+ * Use a new channel ID so an existing silent "default" channel cannot
+ * override the reminder sound settings.
+ */
 export async function ensureAndroidChannel(): Promise<void> {
   if (Platform.OS !== 'android') return;
-
-  await Notifications.setNotificationChannelAsync(
-    ANDROID_CHANNEL_ID,
-    {
+  try {
+    await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_ID, {
       name: 'Reminders',
       importance: Notifications.AndroidImportance.HIGH,
       sound: 'default',
       vibrationPattern: [0, 250, 250, 250],
       lightColor: '#8B5CF6',
-    }
-  );
+    });
+    logger.debug('Android notification channel configured');
+  } catch (e) {
+    logger.error('Failed to configure notification channel:', e);
+  }
 }
 
 // ----------------------------------------------------------------------------
@@ -61,85 +69,42 @@ export type PermissionState =
   | 'undetermined';
 
 export async function getPermissionState(): Promise<PermissionState> {
-  const { status } =
-    await Notifications.getPermissionsAsync();
-
-  if (status === 'granted') {
-    return 'granted';
-  }
-
-  if (status === 'denied') {
+  try {
+    const { status } = await Notifications.getPermissionsAsync();
+    if (status === 'granted') return 'granted';
+    if (status === 'denied') return 'denied';
+    return 'undetermined';
+  } catch (e) {
+    logger.error('Failed to get permission state:', e);
     return 'denied';
   }
-
-  return 'undetermined';
 }
 
 export async function requestPermissions(): Promise<PermissionState> {
-  // Android:
-  // Create the notification channel before requesting permission.
-  if (Platform.OS === 'android') {
-    await ensureAndroidChannel();
-  }
-
-  const current =
-    await Notifications.getPermissionsAsync();
-
-  // Permission already granted.
-  if (current.status === 'granted') {
-    return 'granted';
-  }
-
-  // --------------------------------------------------------------------------
-  // Android 13+ notification permission
-  // --------------------------------------------------------------------------
-  // Android 13 (API 33) introduced POST_NOTIFICATIONS as a runtime permission.
-  // expo-notifications handles the native permission request.
-  if (Platform.OS === 'android') {
-    const requested =
-      await Notifications.requestPermissionsAsync();
-
-    if (requested.status === 'granted') {
-      return 'granted';
+  try {
+    if (Platform.OS === 'android') {
+      await ensureAndroidChannel();
     }
-
-    if (requested.status === 'denied') {
-      return 'denied';
-    }
-
+    const current = await Notifications.getPermissionsAsync();
+    if (current.status === 'granted') return 'granted';
+    const requested = Platform.OS === 'android'
+      ? await Notifications.requestPermissionsAsync()
+      : await Notifications.requestPermissionsAsync({
+          ios: { allowAlert: true, allowBadge: true, allowSound: true },
+        });
+    if (requested.status === 'granted') return 'granted';
+    if (requested.status === 'denied') return 'denied';
     return 'undetermined';
-  }
-
-  // --------------------------------------------------------------------------
-  // iOS notification permission
-  // --------------------------------------------------------------------------
-  const requested =
-    await Notifications.requestPermissionsAsync({
-      ios: {
-        allowAlert: true,
-        allowBadge: true,
-        allowSound: true,
-      },
-    });
-
-  if (requested.status === 'granted') {
-    return 'granted';
-  }
-
-  if (requested.status === 'denied') {
+  } catch (e) {
+    logger.error('Failed to request permissions:', e);
     return 'denied';
   }
-
-  return 'undetermined';
 }
 
-// ----------------------------------------------------------------------------
-// Local persistent map of everything we've scheduled, keyed by
-// `${eventId}:${occurrenceDate}:${reminderId}`.
-// ----------------------------------------------------------------------------
-
-type ScheduledMap =
-  Record<string, ScheduledNotificationRecord>;
+// ============================================================================
+// Scheduled notification tracking
+// ============================================================================
+type ScheduledMap = Record<string, ScheduledNotificationRecord>;
 
 async function getScheduledMap(): Promise<ScheduledMap> {
   return readJson<ScheduledMap>(
@@ -165,6 +130,41 @@ export async function getAllScheduledRecords(): Promise<
   return Object.values(map).sort((a, b) =>
     a.triggerTimeIso.localeCompare(b.triggerTimeIso)
   );
+}
+
+/**
+ * Clean up notifications that have already triggered or are in the past.
+ * Prevents the scheduled notifications map from growing unbounded.
+ * Called periodically to maintain database hygiene.
+ */
+async function cleanupOldScheduledNotifications(): Promise<void> {
+  const now = Date.now();
+  if (now - lastCleanupTime < NOTIFICATION_CLEANUP_INTERVAL_MS) {
+    return; // Skip cleanup if run recently
+  }
+
+  try {
+    const map = await getScheduledMap();
+    const cleaned = { ...map };
+    let removedCount = 0;
+
+    for (const [key, record] of Object.entries(cleaned)) {
+      const triggerTime = new Date(record.triggerTimeIso).getTime();
+      if (triggerTime < now) {
+        // Notification is in the past - remove it
+        delete cleaned[key];
+        removedCount++;
+      }
+    }
+
+    if (removedCount > 0) {
+      logger.debug(`Cleaned up ${removedCount} old notifications`);
+      await persistScheduledMap(cleaned);
+    }
+    lastCleanupTime = now;
+  } catch (e) {
+    logger.error('Notification cleanup failed:', e);
+  }
 }
 
 function lookaheadDaysFor(
@@ -199,6 +199,97 @@ function categoryEmoji(
   );
 }
 
+/**
+ * BATTERY OPTIMIZATION: Silent notifications by default
+ * Only enable sound for important categories. Users can customize in Settings.
+ */
+function shouldPlaySound(category: RememberEvent['category']): boolean {
+  // Only play sound for time-sensitive events
+  return category === 'meeting' || category === 'appointment';
+}
+
+function buildReminderPlan(event: RememberEvent): Array<{ id: string; minutesBefore: number }> {
+  const plan = new Map<string, { id: string; minutesBefore: number }>();
+
+  const addPlanEntry = (id: string, minutesBefore: number) => {
+    const key = `${id}:${minutesBefore}`;
+    if (!plan.has(key)) {
+      plan.set(key, { id, minutesBefore });
+    }
+  };
+
+  for (const reminder of event.reminders) {
+    const minutesBefore =
+      reminder.offset === 'custom'
+        ? reminder.customMinutes ?? 0
+        : REMINDER_OFFSET_MINUTES[reminder.offset];
+    addPlanEntry(reminder.id, minutesBefore);
+  }
+
+  if (event.category === 'birthday' || event.category === 'anniversary') {
+    addPlanEntry(`${event.id}:birthday-week`, 60 * 24 * 7);
+    addPlanEntry(`${event.id}:birthday-day-before`, 60 * 24);
+    addPlanEntry(`${event.id}:birthday-day`, 0);
+  }
+
+  if (
+    (event.priority === 'important' || event.priority === 'very_important') &&
+    event.time &&
+    !event.isAllDay &&
+    event.category !== 'birthday' &&
+    event.category !== 'anniversary'
+  ) {
+    addPlanEntry(`${event.id}:timeline-9h`, 9 * 60);
+    addPlanEntry(`${event.id}:timeline-5h`, 5 * 60);
+    addPlanEntry(`${event.id}:timeline-2h`, 2 * 60);
+    addPlanEntry(`${event.id}:timeline-at-time`, 0);
+  }
+
+  return Array.from(plan.values());
+}
+
+export async function registerReminderNotificationActions(): Promise<void> {
+  try {
+    await Notifications.setNotificationCategoryAsync('REMINDER_ACTIONS', [
+      {
+        identifier: 'DONE_ACTION',
+        buttonTitle: 'Done',
+        options: { isDestructive: false, isAuthenticationRequired: false },
+      },
+      {
+        identifier: 'SNOOZE_10M_ACTION',
+        buttonTitle: 'Snooze 10 min',
+        options: { isDestructive: false, isAuthenticationRequired: false },
+      },
+    ]);
+    logger.debug('Reminder notification actions registered');
+  } catch (e) {
+    logger.error('Failed to register reminder notification actions:', e);
+  }
+}
+
+function parseClockToMinutes(value: string): number {
+  const [h, m] = (value || '00:00').split(':').map(Number);
+  return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);
+}
+
+export function isQuietHoursActive(date: Date): boolean {
+  const settings = useSettingsStore.getState().settings;
+  if (!settings.quietHoursEnabled) return false;
+
+  const startMinutes = parseClockToMinutes(settings.quietHoursStart);
+  const endMinutes = parseClockToMinutes(settings.quietHoursEnd);
+  const nowMinutes = date.getHours() * 60 + date.getMinutes();
+
+  if (startMinutes === endMinutes) return true;
+
+  if (startMinutes < endMinutes) {
+    return nowMinutes >= startMinutes && nowMinutes < endMinutes;
+  }
+
+  return nowMinutes >= startMinutes || nowMinutes < endMinutes;
+}
+
 function buildNotificationContent(
   event: RememberEvent,
   occurrenceDate: string
@@ -207,198 +298,158 @@ function buildNotificationContent(
 
   const whenLabel = event.isAllDay
     ? formatDateShort(occurrenceDate)
-    : `${formatDateShort(occurrenceDate)} · ${formatTime12h(
-        event.time
-      )}`;
+    : `${formatDateShort(occurrenceDate)} · ${formatTime12h(event.time)}`;
 
-  // Task notification
+  const baseContent: Notifications.NotificationContentInput = {
+    categoryIdentifier: 'REMINDER_ACTIONS',
+    data: { eventId: event.id, occurrenceDate },
+    sound: shouldPlaySound(event.category), // Conditional sound
+  };
+
   if (event.category === 'task') {
     return {
-      title: '📝 You have a task',
-      body: `${event.title} · ${whenLabel}`,
-      data: {
-        eventId: event.id,
-        occurrenceDate,
-      },
-      sound: true,
+      ...baseContent,
+      title: `📝 Task: ${event.title}`,
+      body: whenLabel,
+    };
+  }
+  if (event.category === 'meeting') {
+    return {
+      ...baseContent,
+      title: `📅 Meeting: ${event.title}`,
+      body: whenLabel,
     };
   }
 
   // Normal reminder
   return {
+    ...baseContent,
     title: `${emoji} ${event.title}`,
     body: whenLabel,
-    data: {
-      eventId: event.id,
-      occurrenceDate,
-    },
-    sound: true,
   };
 }
 
-// ----------------------------------------------------------------------------
-// Sync notifications for ONE event
-// ----------------------------------------------------------------------------
-
+/**
+ * Diff-based sync for ONE event: schedules whatever reminders are missing
+ * within the lookahead window, and cancels+removes any previously scheduled
+ * notification for this event that is no longer valid.
+ *
+ * OPTIMIZATIONS:
+ * - Limits reminders per event to prevent spam
+ * - Limits total notifications per event in lookahead window
+ * - Runs periodic cleanup of old notifications
+ * - Proper error handling with logging
+ */
 export async function syncEventNotifications(
   event: RememberEvent,
   notificationsEnabled: boolean
 ): Promise<void> {
-  const map = await getScheduledMap();
+  try {
+    // Periodically clean up old notifications
+    await cleanupOldScheduledNotifications();
 
-  const existingForEvent =
-    Object.values(map).filter(
-      (r) => r.eventId === event.id
-    );
+    const map = await getScheduledMap();
+    const existingForEvent = Object.values(map).filter((r) => r.eventId === event.id);
+    const desiredKeys = new Set<string>();
+    const reminderPlan = buildReminderPlan(event).slice(0, MAX_REMINDERS_PER_EVENT);
 
-  const desiredKeys = new Set<string>();
+    if (notificationsEnabled && reminderPlan.length > 0) {
+      const now = new Date();
+      const rangeEnd = addDays(now, lookaheadDaysFor(event.recurrence.frequency));
+      const occurrences = getOccurrencesInRange(event, now, rangeEnd);
 
-  if (
-    notificationsEnabled &&
-    event.reminders.length > 0
-  ) {
-    const now = new Date();
+      let scheduledCount = existingForEvent.length;
 
-    const rangeEnd = addDays(
-      now,
-      lookaheadDaysFor(
-        event.recurrence.frequency
-      )
-    );
+      for (const occ of occurrences) {
+        if (occ.isCompleted || scheduledCount >= MAX_SCHEDULED_PER_EVENT_IN_LOOKAHEAD) continue;
 
-    const occurrences =
-      getOccurrencesInRange(
-        event,
-        now,
-        rangeEnd
-      );
+        let immediateFallbackScheduled = false;
+        for (const reminder of reminderPlan) {
+          if (scheduledCount >= MAX_SCHEDULED_PER_EVENT_IN_LOOKAHEAD) break;
 
-    for (const occ of occurrences) {
-      if (occ.isCompleted) continue;
+          const minutesBefore = reminder.minutesBefore;
+          let triggerDate = reminderTriggerDate(occ.occurrenceDate, event.time, minutesBefore);
 
-      for (const reminder of event.reminders) {
-        const minutesBefore =
-          reminder.offset === 'custom'
-            ? reminder.customMinutes ?? 0
-            : REMINDER_OFFSET_MINUTES[
-                reminder.offset
-              ];
+          if (isQuietHoursActive(triggerDate)) {
+            const nextHour = new Date(triggerDate.getTime() + 60 * 60 * 1000);
+            if (isQuietHoursActive(nextHour)) {
+              continue;
+            }
+            triggerDate = nextHour;
+          }
 
-        const triggerDate =
-          reminderTriggerDate(
-            occ.occurrenceDate,
-            event.time,
-            minutesBefore
-          );
+          if (triggerDate.getTime() <= Date.now()) {
+            const createdRecently = Date.now() - new Date(event.createdAt).getTime() < 2 * 60 * 1000;
+            if (event.category !== 'task' || !createdRecently || immediateFallbackScheduled) continue;
+            triggerDate = new Date(Date.now() + 2_000);
+            immediateFallbackScheduled = true;
+          }
 
-        // Do not schedule notifications in the past.
-        if (
-          triggerDate.getTime() <= Date.now()
-        ) {
-          continue;
-        }
+          const key = `${event.id}:${occ.occurrenceDate}:${reminder.id}`;
+          desiredKeys.add(key);
+          if (map[key]) continue; // already scheduled — idempotent, skip
 
-        const key =
-          `${event.id}:${occ.occurrenceDate}:${reminder.id}`;
-
-        desiredKeys.add(key);
-
-        // Already scheduled.
-        if (map[key]) {
-          continue;
-        }
-
-        try {
-          const notificationId =
-            await Notifications.scheduleNotificationAsync(
-              {
-                content:
-                  buildNotificationContent(
-                    event,
-                    occ.occurrenceDate
-                  ),
-
-                trigger: {
-                  type:
-                    Notifications
-                      .SchedulableTriggerInputTypes
-                      .DATE,
-
-                  date: triggerDate,
-
-                  // IMPORTANT:
-                  // Always use our sound-enabled channel.
-                  channelId:
-                    ANDROID_CHANNEL_ID,
-                },
-              }
-            );
-
-          map[key] = {
-            key,
-            eventId: event.id,
-            reminderId: reminder.id,
-            occurrenceDate:
-              occ.occurrenceDate,
-            notificationId,
-            triggerTimeIso:
-              triggerDate.toISOString(),
-          };
-        } catch (e) {
-          console.warn(
-            '[notifications] failed to schedule',
-            key,
-            e
-          );
+          try {
+            const notificationId = await Notifications.scheduleNotificationAsync({
+              content: buildNotificationContent(event, occ.occurrenceDate),
+              trigger: {
+                type: Notifications.SchedulableTriggerInputTypes.DATE,
+                date: triggerDate,
+                channelId: ANDROID_CHANNEL_ID,
+              },
+            });
+            map[key] = {
+              key,
+              eventId: event.id,
+              reminderId: reminder.id,
+              occurrenceDate: occ.occurrenceDate,
+              notificationId,
+              triggerTimeIso: triggerDate.toISOString(),
+            };
+            scheduledCount++;
+          } catch (e) {
+            logger.warn(`Failed to schedule notification for ${key}:`, e);
+          }
         }
       }
     }
-  }
 
-  // --------------------------------------------------------------------------
-  // Cancel notifications that are no longer needed.
-  // --------------------------------------------------------------------------
-
-  for (const record of existingForEvent) {
-    if (!desiredKeys.has(record.key)) {
-      await Notifications
-        .cancelScheduledNotificationAsync(
-          record.notificationId
-        )
-        .catch(() => {});
-
-      delete map[record.key];
+    // Cancel anything tracked for this event that is no longer desired
+    for (const record of existingForEvent) {
+      if (!desiredKeys.has(record.key)) {
+        try {
+          await Notifications.cancelScheduledNotificationAsync(record.notificationId);
+        } catch (e) {
+          logger.warn(`Failed to cancel notification ${record.notificationId}:`, e);
+        }
+        delete map[record.key];
+      }
     }
-  }
 
-  await persistScheduledMap(map);
+    await persistScheduledMap(map);
+  } catch (e) {
+    logger.error('syncEventNotifications failed:', e);
+    // Don't throw - allow app to continue
+  }
 }
 
-// ----------------------------------------------------------------------------
-// Cancel ALL notifications for an event
-// ----------------------------------------------------------------------------
-
-export async function cancelAllNotificationsForEvent(
-  eventId: string
-): Promise<void> {
-  const map = await getScheduledMap();
-
-  const toCancel =
-    Object.values(map).filter(
-      (r) => r.eventId === eventId
-    );
-
-  for (const record of toCancel) {
-    await Notifications
-      .cancelScheduledNotificationAsync(
-        record.notificationId
-      )
-      .catch(() => {});
-
-    delete map[record.key];
+/** Cancels and untracks every scheduled notification for an event (used on delete). */
+export async function cancelAllNotificationsForEvent(eventId: string): Promise<void> {
+  try {
+    const map = await getScheduledMap();
+    const toCancel = Object.values(map).filter((r) => r.eventId === eventId);
+    for (const record of toCancel) {
+      try {
+        await Notifications.cancelScheduledNotificationAsync(record.notificationId);
+      } catch (e) {
+        logger.warn(`Failed to cancel notification ${record.notificationId}:`, e);
+      }
+      delete map[record.key];
+    }
+    await persistScheduledMap(map);
+  } catch (e) {
+    logger.error('cancelAllNotificationsForEvent failed:', e);
   }
-
-  await persistScheduledMap(map);
 }
 
 // ----------------------------------------------------------------------------
@@ -406,52 +457,41 @@ export async function cancelAllNotificationsForEvent(
 // ----------------------------------------------------------------------------
 
 export async function syncAllEventNotifications(
-  events: RememberEvent[],
-  notificationsEnabled: boolean
+  events: RememberEvent[]
 ): Promise<void> {
-  for (const event of events) {
-    await syncEventNotifications(
-      event,
-      notificationsEnabled &&
-        !event.completed
-    );
+  try {
+    const notificationsEnabled = useSettingsStore.getState().settings.notificationsEnabled;
+    await Promise.all(events.map((event) =>
+      syncEventNotifications(event, notificationsEnabled && !event.completed)
+    ));
+  } catch (e) {
+    logger.error('syncAllEventNotifications failed:', e);
   }
 }
 
-// ----------------------------------------------------------------------------
-// Developer test notification
-// ----------------------------------------------------------------------------
-
-export async function scheduleTestNotification(): Promise<{
-  id: string;
-}> {
-  // Make sure the sound-enabled channel exists.
-  await ensureAndroidChannel();
-
-  const id =
-    await Notifications.scheduleNotificationAsync({
+// ============================================================================
+// Developer test helpers (section: Notification Testing)
+// ============================================================================
+export async function scheduleTestNotification(): Promise<{ id: string }> {
+  try {
+    await ensureAndroidChannel();
+    const id = await Notifications.scheduleNotificationAsync({
       content: {
         title: '🔔 Test Reminder',
-        body:
-          'Your RememberMe notification system is working!',
+        body: 'Your RememberMe notification system is working!',
         sound: true,
       },
-
       trigger: {
-        type:
-          Notifications
-            .SchedulableTriggerInputTypes
-            .TIME_INTERVAL,
-
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
         seconds: 10,
-
-        // Use the same sound-enabled channel.
-        channelId:
-          ANDROID_CHANNEL_ID,
+        channelId: ANDROID_CHANNEL_ID,
       },
     });
-
-  return { id };
+    return { id };
+  } catch (e) {
+    logger.error('Failed to schedule test notification:', e);
+    throw e;
+  }
 }
 
 // ----------------------------------------------------------------------------
@@ -459,8 +499,11 @@ export async function scheduleTestNotification(): Promise<{
 // ----------------------------------------------------------------------------
 
 export async function getNativeScheduledCount(): Promise<number> {
-  const list =
-    await Notifications.getAllScheduledNotificationsAsync();
-
-  return list.length;
+  try {
+    const list = await Notifications.getAllScheduledNotificationsAsync();
+    return list.length;
+  } catch (e) {
+    logger.error('Failed to get native scheduled count:', e);
+    return 0;
+  }
 }

@@ -2,7 +2,8 @@
   "expo": {
     "name": "RememberMe",
     "slug": "rememberme",
-    "version": "1.0.0",
+    "version": "1.0.3",
+    "icon": "./assets/icon.png.png",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "scheme": "rememberme",
@@ -12,7 +13,9 @@
     },
     "android": {
       "package": "com.rememberme.app",
+      "icon": "./assets/icon.png.png",
       "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png.png",
         "backgroundColor": "#0F172A"
       },
       "permissions": [
@@ -36,6 +39,12 @@
       "eas": {
         "projectId": "fe955aff-06c5-4b82-8035-69be8b73b9ce"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/fe955aff-06c5-4b82-8035-69be8b73b9ce"
     }
   }
 }

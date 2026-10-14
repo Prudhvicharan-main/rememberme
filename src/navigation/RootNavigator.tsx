@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, Text } from 'react-native';
+import { Pressable } from 'react-native';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -31,8 +31,8 @@ const TAB_ICONS: Record<keyof TabParamList, keyof typeof Ionicons.glyphMap> = {
   Home: 'home',
   Moments: 'sparkles',
   Meetings: 'calendar',
-  People: 'people',
   Tasks: 'checkbox',
+  People: 'people',
 };
 
 function SettingsButton() {
@@ -66,8 +66,8 @@ function Tabs() {
       <Tab.Screen name="Home" component={HomeScreen} options={{ title: 'RememberMe' }} />
       <Tab.Screen name="Moments" component={MomentsScreen} options={{ headerShown: false }} />
       <Tab.Screen name="Meetings" component={MeetingsScreen} options={{ headerShown: false }} />
-      <Tab.Screen name="People" component={PeopleScreen} options={{ headerShown: false }} />
       <Tab.Screen name="Tasks" component={TasksScreen} options={{ headerShown: false }} />
+      <Tab.Screen name="People" component={PeopleScreen} options={{ headerShown: false }} />
     </Tab.Navigator>
   );
 }

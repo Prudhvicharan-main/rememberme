@@ -22,6 +22,7 @@ import { RememberEvent, ReminderOffsetKey } from '@/types';
 import { upcomingOccurrences, upcomingBirthdaysAndAnniversaries, taskOccurrences, todaysOccurrences } from '@/lib/selectors';
 import { countdownLabel, formatDateShort, todayIso } from '@/lib/dateUtils';
 import { suggestionsForCategory } from '@/lib/suggestions';
+import { addDays, format } from 'date-fns';
 
 interface ChatMessage {
   id: string;
@@ -130,11 +131,26 @@ export default function AssistantScreen() {
       return;
     }
 
+    if (intent.type === 'query_meetings_tomorrow') {
+      const events = useEventsStore.getState().events;
+      const tomorrow = format(addDays(new Date(), 1), 'yyyy-MM-dd');
+      const list = upcomingOccurrences(events, 2, false).filter(
+        (o) => o.event.category === 'meeting' && o.occurrenceDate === tomorrow
+      );
+      pushMessage({
+        role: 'assistant',
+        text: list.length
+          ? `You have these meetings tomorrow:\n\n${list.map((o) => `• ${o.event.title}${o.event.time ? ` at ${o.event.time}` : ''}`).join('\n')}`
+          : 'You have no meetings tomorrow.',
+      });
+      return;
+    }
+
     if (intent.type === 'query_birthdays') {
       const events = useEventsStore.getState().events;
-      const list = upcomingBirthdaysAndAnniversaries(events, 90);
+      const list = upcomingBirthdaysAndAnniversaries(events, 90).filter((o) => o.event.category === 'birthday');
       if (list.length === 0) {
-        pushMessage({ role: 'assistant', text: 'No birthdays or anniversaries in the next 90 days.' });
+        pushMessage({ role: 'assistant', text: 'You have no upcoming birthdays in the next 90 days.' });
         return;
       }
       const lines = list

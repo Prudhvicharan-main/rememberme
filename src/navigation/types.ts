@@ -23,6 +23,6 @@ export type TabParamList = {
   Home: undefined;
   Moments: undefined;
   Meetings: undefined;
-  People: undefined;
   Tasks: undefined;
+  People: undefined;
 };
